@@ -1,10 +1,15 @@
 import { Embedder } from "./embeddings/Embedder.js";
 
+export interface InbedImport {
+  source: string;
+  resolved: string;
+}
+
 export interface InbedFile {
   path: string;
   content: string;
   chunks: string[];
-  imports: string[];
+  imports: InbedImport[];
   embedding?: number[][];
 }
 

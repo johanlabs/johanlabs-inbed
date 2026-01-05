@@ -5,7 +5,7 @@ import chokidar from 'chokidar';
 
 import { glob } from 'glob';
 import ts from 'typescript';
-import { InbedFile, InbedOptions, SearchResult } from './types.js';
+import { InbedFile, InbedOptions, SearchResult, InbedImport } from './types.js';
 
 import { Embedder } from './embeddings/Embedder.js';
 
@@ -17,11 +17,9 @@ export class Inbed {
   private storageDir: string;
   private chunkLimit: number;
 
-  // concurrency
   private embeddingQueue: Promise<void>[] = [];
   private maxConcurrentEmbeds = 4;
 
-  // watcher debounce
   private debounceMap: Map<string, NodeJS.Timeout> = new Map();
 
   constructor(embedder: Embedder, options: InbedOptions) {
@@ -47,7 +45,7 @@ export class Inbed {
       try {
         const content = fs.readFileSync(fullPath, 'utf-8');
         await this.enqueueAdd(path.normalize(filePath), content);
-      } catch { }
+      } catch {}
     }
 
     await this.flushQueue();
@@ -103,7 +101,7 @@ export class Inbed {
       try {
         const saved = JSON.parse(fs.readFileSync(storagePath, 'utf-8'));
         if (saved.hash === currentHash) embedding = saved.embedding;
-      } catch { }
+      } catch {}
     }
 
     let chunks = this.isSmall(content) ? [content] : this.chunkByAST(content);
@@ -114,7 +112,7 @@ export class Inbed {
       embedding = raw.map(v => this.normalize(v));
       try {
         fs.writeFileSync(storagePath, JSON.stringify({ hash: currentHash, embedding }, null, 2));
-      } catch { }
+      } catch {}
     }
 
     this.files.set(filePath, { path: filePath, content, chunks, imports: [], embedding });
@@ -149,11 +147,9 @@ export class Inbed {
   private resolveImports(file: InbedFile, depth: number) {
     if (depth > (this.options.maxDepth || 10)) return;
 
-    const imports: { source: string; resolved: string }[] = [];
+    const imports: InbedImport[] = [];
 
-    // captura import e require
-    const importRegex =
-      /import\s+(?:[^'"\n]+)\s+from\s+['"](.+)['"]|require\(\s*['"](.+)['"]\s*\)/g;
+    const importRegex = /import\s+(?:[^'"\n]+)\s+from\s+['"](.+)['"]|require\(\s*['"](.+)['"]\s*\)/g;
 
     let match;
     while ((match = importRegex.exec(file.content)) !== null) {
@@ -166,19 +162,13 @@ export class Inbed {
         const candidate = path.normalize(base + ext);
         if (this.files.has(candidate)) {
           imports.push({ source: sourceImport, resolved: candidate });
-
-          // recursão
           this.resolveImports(this.files.get(candidate)!, depth + 1);
           break;
         }
       }
     }
 
-    // deduplicação
-    file.imports = imports.filter(
-      (v, i, arr) =>
-        arr.findIndex(x => x.resolved === v.resolved) === i
-    ) as any;
+    file.imports = imports.filter((v, i, arr) => arr.findIndex(x => x.resolved === v.resolved) === i);
   }
 
   async upsertFile(filePath: string, content: string) {
@@ -209,19 +199,8 @@ export class Inbed {
         }
       }
       if (bestScore > 0) {
-        const importsText = Array.isArray(file.imports)
-          ? file.imports
-            .map((imp: any) =>
-              typeof imp === 'string' ? imp : `${imp.source} -> ${imp.resolved}`
-            )
-            .join('\n')
-          : '';
-
-        const context = `FILE: ${file.path}
-IMPORTS:
-${importsText || '(none)'}
----
-${bestChunk}`;
+        const importsText = file.imports.map(imp => `${imp.source} -> ${imp.resolved}`).join('\n');
+        const context = `FILE: ${file.path}\nIMPORTS:\n${importsText || '(none)'}\n---\n${bestChunk}`;
         results.push({ path: file.path, snippet: context.slice(0, 500), score: bestScore });
       }
     }
@@ -255,7 +234,8 @@ ${bestChunk}`;
           try {
             const content = fs.readFileSync(fullPath, 'utf-8');
             await this.enqueueAdd(relPath, content);
-          } catch { }
+            if (this.options.recursive) this.resolveImports(this.files.get(relPath)!, 0);
+          } catch {}
         }
       }))
       .on('change', fullPath => schedule(fullPath, async () => {
@@ -264,7 +244,8 @@ ${bestChunk}`;
           try {
             const content = fs.readFileSync(fullPath, 'utf-8');
             await this.enqueueAdd(relPath, content);
-          } catch { }
+            if (this.options.recursive) this.resolveImports(this.files.get(relPath)!, 0);
+          } catch {}
         }
       }))
       .on('unlink', fullPath => {

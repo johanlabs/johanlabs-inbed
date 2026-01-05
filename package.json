@@ -1,23 +1,17 @@
 {
   "name": "inbed",
-  "version": "1.0.0",
-  "description": "Inbed: embed project files in memory with semantic search and recursive import resolution",
+  "version": "1.0.1",
+  "description": "Semantic indexing and search over source code using vector embeddings",
   "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc",
     "start": "node dist/index.js",
     "demo": "node demo.js"
   },
-  "keywords": [
-    "embedding",
-    "semantic",
-    "codebase",
-    "AST",
-    "typescript",
-    "javascript"
-  ],
-  "author": "",
-  "license": "ISC",
+  "keywords": ["embedding", "semantic", "codebase", "AST", "typescript", "javascript"],
+  "author": "Johan Labs",
+  "license": "MIT",
   "type": "module",
   "dependencies": {
     "@openrouter/sdk": "^0.2.11",
